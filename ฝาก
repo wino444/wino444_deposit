@@ -1,1 +1,180 @@
-555
+-- Anti_SimpleSpy by Grok 4 🚫🕵️‍♂️ (Hardcore V4 - 2025 Multi-Language)
+-- ✅ ป้องกันการโหลด, ทำลาย SimpleSpy, เตะถ้าไม่อยู่ในไวท์ลิสต์
+-- ✅ Hook หลายเลเยอร์, ตรวจจับ GUI, ตรวจจับ Env, และกันการ bypass Kick!
+-- ✅ รองรับหลายภาษา (TH/EN)
+-- ✅ ตรวจจับทั้ง _G.SimpleSpyShutdown และ getgenv().SimpleSpyShutdown
+
+local Players = game:GetService("Players")
+local CoreGui = game:GetService("CoreGui")
+local LocalPlayer = Players.LocalPlayer
+local Silent = true -- true = ปิด log ใน console 🥷
+local Language = "TH" -- 🌏 ค่าเริ่มต้น: "TH" → ไทย | "EN" → อังกฤษ
+
+-- ตรวจสอบการรันซ้ำ
+if _G.AntiSimpleSpyRunning then return end
+_G.AntiSimpleSpyRunning = true
+
+-- ------------------ 🌏 Messages ------------------
+local Messages = {
+    TH = {
+        whitelistFail = "⚠️ โหลด PlayersData ไม่สำเร็จ → ไม่มี whitelist 🛑",
+        whitelistSkip = "✅ คุณอยู่ใน whitelist – ข้ามตรวจจับ 😎",
+        blockedHttpGet = "🚨 บล็อก HttpGet ของ Spy! 🛑",
+        blockedHttpGetAsync = "🚨 บล็อก HttpGetAsync ของ Spy! 🛑",
+        blockedRequire = "🚨 บล็อก require ของ Spy module! 🛑",
+        noHook = "⚠️ Exploit ของคุณไม่รองรับ hookfunction/newcclosure ❌",
+        detectChild = "💥 ทำลาย Spy GUI (ChildAdded) 🔥",
+        detectLoop = "💥 ทำลาย Spy GUI (Loop) 🔥",
+        detectShutdown = "⚡ ปิด SimpleSpy 🛑",
+        detectEnv = "🚨 ตรวจพบ global น่าสงสัย: ",
+        kickReason = "🚨 ตรวจพบ SimpleSpy! 🛡️",
+        kickShutdown = "🚨 SimpleSpy ถูกปิด → Kick",
+        kickEnv = "🚨 ตรวจพบ Spy Env! 🛡️",
+        active = "🛡️ Anti_SimpleSpy Hardcore V4 ทำงานแล้ว! 🚀"
+    },
+    EN = {
+        whitelistFail = "⚠️ Failed to load PlayersData → No whitelist 🛑",
+        whitelistSkip = "✅ You are in whitelist – Skipping detection 😎",
+        blockedHttpGet = "🚨 Blocked HttpGet Spy! 🛑",
+        blockedHttpGetAsync = "🚨 Blocked HttpGetAsync Spy! 🛑",
+        blockedRequire = "🚨 Blocked require Spy module! 🛑",
+        noHook = "⚠️ Your exploit does not support hookfunction/newcclosure ❌",
+        detectChild = "💥 Destroyed Spy GUI (ChildAdded) 🔥",
+        detectLoop = "💥 Destroyed Spy GUI (Loop) 🔥",
+        detectShutdown = "⚡ Shutdown SimpleSpy 🛑",
+        detectEnv = "🚨 Detected suspicious global: ",
+        kickReason = "🚨 SimpleSpy Detected! 🛡️",
+        kickShutdown = "🚨 SimpleSpy Shutdown → Kick",
+        kickEnv = "🚨 Spy Env Detected! 🛡️",
+        active = "🛡️ Anti_SimpleSpy Hardcore V4 Active! 🚀"
+    }
+}
+
+local Msg = Messages[Language]
+
+-- ------------------ 🌏 ฟังก์ชัน log ------------------
+local function logMessage(message, isPrint)
+    if not Silent then
+        if isPrint then print(message) else warn(message) end
+    end
+end
+
+-- ------------------ 🌏 โหลด PlayersData (Whitelist) ------------------
+local success, PlayersData = pcall(function()
+    return loadstring(game:HttpGet("https://raw.githubusercontent.com/wino444/wino444_name_Anti_SimpleSpy/refs/heads/main/.lua"))()
+end)
+
+if not success or not PlayersData or not PlayersData.players or type(PlayersData.players) ~= "table" then
+    logMessage(Msg.whitelistFail)
+    PlayersData = { players = {} }
+end
+
+-- ฟังก์ชันตรวจ Whitelist
+local function isWhitelisted(playerName)
+    return table.find(PlayersData.players, playerName) ~= nil
+end
+
+-- ------------------ 🌏 Hook หลายเลเยอร์กันโหลด Spy ------------------
+local function blockRemoteLoads()
+    if hookfunction and newcclosure then
+        -- Hook HttpGet
+        local oldHttpGet = hookfunction(game.HttpGet, newcclosure(function(self, url, ...)
+            if url:find("SimpleSpy") or url:find("highlight.lua") then
+                logMessage(Msg.blockedHttpGet)
+                return ""
+            end
+            return oldHttpGet(self, url, ...)
+        end))
+
+        -- Hook HttpGetAsync
+        local oldHttpGetAsync = hookfunction(game.HttpGetAsync, newcclosure(function(self, url, ...)
+            if url:find("SimpleSpy") then
+                logMessage(Msg.blockedHttpGetAsync)
+                return ""
+            end
+            return oldHttpGetAsync(self, url, ...)
+        end))
+
+        -- Hook require
+        local oldRequire = hookfunction(require, newcclosure(function(module, ...)
+            local name = tostring(module)
+            if name:lower():find("spy") then
+                logMessage(Msg.blockedRequire)
+                return nil
+            end
+            return oldRequire(module, ...)
+        end))
+    else
+        logMessage(Msg.noHook)
+    end
+end
+
+-- ------------------ 🌏 Protect Kick ------------------
+pcall(function()
+    local oldKick
+    oldKick = hookfunction(LocalPlayer.Kick, function(self, reason, ...)
+        return oldKick(self, reason or Msg.kickReason, ...)
+    end)
+end)
+
+-- ------------------ 🌏 Destroy & Kick ถ้าเจอ Spy ------------------
+local function destroyAndKickSpy()
+    if isWhitelisted(LocalPlayer.Name) then
+        logMessage(Msg.whitelistSkip, true)
+        return
+    end
+
+    -- Passive detection
+    CoreGui.ChildAdded:Connect(function(child)
+        if child:IsA("ScreenGui") and child.Name:lower():find("spy") then
+            child:Destroy()
+            logMessage(Msg.detectChild)
+            LocalPlayer:Kick(Msg.kickReason)
+        end
+    end)
+
+    -- Active detection
+    task.spawn(function()
+        while true do
+            task.wait(0.3)
+            local spyGui = CoreGui:FindFirstChild("SimpleSpy") or CoreGui:FindFirstChild("SimpleSpy2")
+            if spyGui then
+                spyGui:Destroy()
+                logMessage(Msg.detectLoop)
+                LocalPlayer:Kick(Msg.kickReason)
+            end
+
+            -- ตรวจจับ shutdown ทั้ง _G และ getgenv
+            local shutdowns = {_G.SimpleSpyShutdown, getgenv().SimpleSpyShutdown}
+            for _, fn in ipairs(shutdowns) do
+                if type(fn) == "function" then
+                    pcall(fn)
+                    logMessage(Msg.detectShutdown)
+                    LocalPlayer:Kick(Msg.kickShutdown)
+                end
+            end
+        end
+    end)
+end
+
+-- ------------------ 🌏 ตรวจ Env ------------------
+local function detectEnv()
+    task.spawn(function()
+        while true do
+            task.wait(1)
+            for k,v in pairs(getgenv()) do
+                if tostring(k):lower():find("spy") then
+                    logMessage(Msg.detectEnv..tostring(k))
+                    LocalPlayer:Kick(Msg.kickEnv)
+                end
+            end
+        end
+    end)
+end
+
+-- ------------------ 🌏 Run ------------------
+blockRemoteLoads()
+destroyAndKickSpy()
+detectEnv()
+
+logMessage(Msg.active, true)
